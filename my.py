@@ -101,7 +101,9 @@ def zhaidai(sensor_error, thetacom):
 def generate_signal(thetacom, sensor_error):
     x = LFM_source(thetacom[0], snr[0])  # 期望信号
     x += LFM_source(thetacom[1], snr[1])  # 宽带干扰
-    x += zhaidai(sensor_error, thetacom[2]) .conj # 窄带干扰
+    print(x.dtype)
+    u = zhaidai(sensor_error, thetacom[2]).conj() 
+    x += u# 窄带干扰
     noise = 1 / np.sqrt(2) * np.random.randn(M, Nr) + 1j / \
         np.sqrt(2) * np.random.randn(M, Nr)  # 加噪声
     x += noise
@@ -125,7 +127,7 @@ def xiefangcha(X, mm, kn):
     Rfl = np.zeros((M, M, G), dtype=complex)
 
     for g in range(G):
-        Rfl[:, :, g] = X[:, :, kn[g]] @ X[:, :, kn[g]].conj.T
+        Rfl[:, :, g] = X[:, :, kn[g]] @ X[:, :, kn[g]].conj().T
 
     return Rfl
 # 4.计算聚焦矩阵
@@ -154,8 +156,8 @@ def calculate_Y():
                 Af[m, theta_index] = calculate_exponential(
                     F[g], m, theta[theta_index]).T
 
-        U, _, V = np.linalg.svd(Af.dot(Af0.conj.T))
-        Y[:, :, g] = V.dot(U.conj.T)
+        U, _, V = np.linalg.svd(Af.dot(Af0.conj().T))
+        Y[:, :, g] = V.dot(U.conj().T)
 
     return Y
 # 5&9.聚焦&叠加
@@ -164,7 +166,7 @@ def calculate_Y():
 def JuDie(Y, Ju):
     Rin = np.zeros((M, M), dtype=complex)
     for g in range(G):
-        Rin += Y[:, :, g] @ Ju[:, :, g] @ Y[:, :, g].conj.T
+        Rin += Y[:, :, g] @ Ju[:, :, g] @ Y[:, :, g].conj().T
     Rin /= G
     return Rin
 # 6.重构子带协方差矩阵R
@@ -182,7 +184,7 @@ def ChongGou(thetacom, R_):
 
     for g in range(G):
         Rinfl_U[:, :, g] = lambda_max * \
-            (arrayline(F[g])*arrayline(F[g]).conj.T) + lambda_min * np.eye(M)
+            (arrayline(F[g])*arrayline(F[g]).conj().T) + lambda_min * np.eye(M)
 
     return Rinfl_U
 # 7.锥化来零陷展宽
