@@ -1,0 +1,10 @@
+---
+version: "v1"
+image: "cloudstudio-devops-docker.pkg.coding.net/artifacts/workspace/python-3.11:2023-04-25.0943"
+extensions:
+- "ms-python.python@2023.4.1"
+- "ms-toolsai.jupyter@2023.2.100"
+lifecycle:
+  init:
+  - name: "������jupyter"
+    command: "pip install jupyter"
