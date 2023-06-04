@@ -8,7 +8,7 @@ from tensorflow.python.framework.ops import disable_eager_execution
 import math
 from numpy.random import rand
 import pprint
-
+from scipy import io
 
 def tpuconnect():
     resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu='')
@@ -49,10 +49,10 @@ sensor_error = 0.1 * (rand() - 0.5)  # 阵元位置误差
 def calculate_frequency_parameters():
 
     t = np.arange(0, Nr) / fs  # 时间轴刻度
-    fw = np.linspace(0, fs, J+1)  # 频率轴刻度
+    fw = np.linspace(0, fs, Nr)  # 频率轴刻度
     m = int(f0 / fs)
-    kn = np.where((fw >= f0 - m * fs - B / 2) &
-                  (fw <= f0 - m * fs + B / 2))[0]  # fft后落在带宽内频率索引
+    kn = np.nonzero(np.logical_and((fw >= f0 - m * fs - B / 2) , (fw <= f0 - m * fs + B / 2))
+                 )[0] # fft后落在带宽内频率索引
     G = len(kn)  # 落在带宽内的频率的个数
     F = fw[kn]  # 落在带宽内的频率
 
@@ -72,7 +72,7 @@ new_DOA = generate_DOA_combinations()
 # 1.产生信号
 
 
-def LFM_source(theta, snr):
+def LFM_source(theta, snr):  #两个宽带信号频率是一样的
     t = np.arange(0, T, 1/fs)       # 时间变量
     P = 10**(snr/20)                # 信号功率
     K = B / T                       # 调频速率
@@ -85,15 +85,16 @@ def LFM_source(theta, snr):
     return x
 
 
-def arrayline(thetacom, sensor_error=0):
-    return np.exp(-1j * 2 * pi * (d + sensor_error) * f0 * np.sin(thetacom * radians) * np.arange(M) / c)
+def arrayline(thetacom, fpin,sensor_error=0):
+    return np.exp(-1j * 2 * pi * (d + sensor_error) * fpin * np.sin(thetacom * radians) * np.arange(M) / c)
 
 
 def zhaidai(sensor_error, thetacom):
     t = np.arange(Nr) / fs  # 窄带干扰专用
     s = np.sqrt(10 ** (snr[2] / 10)) * np.sin(2 * pi * f0 * t).reshape(1, -1)
-    a = arrayline(thetacom, sensor_error).T
-    a = a[:, np.newaxis]
+    a = arrayline(thetacom, f0,sensor_error).conj()
+    a = np.reshape(a,(-1,1))
+
     signal = a @ s  # a*s
     return signal
 
@@ -102,7 +103,7 @@ def generate_signal(thetacom, sensor_error):
     x = LFM_source(thetacom[0], snr[0])  # 期望信号
     x += LFM_source(thetacom[1], snr[1])  # 宽带干扰
     print(x.dtype)
-    u = zhaidai(sensor_error, thetacom[2]).conj() 
+    u = zhaidai(sensor_error, thetacom[2])
     x += u# 窄带干扰
     noise = 1 / np.sqrt(2) * np.random.randn(M, Nr) + 1j / \
         np.sqrt(2) * np.random.randn(M, Nr)  # 加噪声
@@ -124,10 +125,10 @@ def calculate_fft(x):
 
 
 def xiefangcha(X, mm, kn):
+    K_freq = Nr//J
     Rfl = np.zeros((M, M, G), dtype=complex)
-
     for g in range(G):
-        Rfl[:, :, g] = X[:, :, kn[g]] @ X[:, :, kn[g]].conj().T
+        Rfl[:,:, g] = X[:,kn[g]%K_freq,kn[g]//K_freq] @ X[:,kn[g]%K_freq,kn[g]//K_freq].conj().T
 
     return Rfl
 # 4.计算聚焦矩阵
@@ -183,8 +184,7 @@ def ChongGou(thetacom, R_):
     Rinfl_U = np.zeros((M, M, G), dtype=complex)
 
     for g in range(G):
-        Rinfl_U[:, :, g] = lambda_max * \
-            (arrayline(F[g])*arrayline(F[g]).conj().T) + lambda_min * np.eye(M)
+        Rinfl_U[:, :, g] = lambda_max * (arrayline(doa_i[0],F[g])*arrayline(doa_i[0],F[g]).conj().T) + lambda_max * (arrayline(doa_i[1],F[g])*arrayline(doa_i[1],F[g]).conj().T)+lambda_min * np.eye(M)
 
     return Rinfl_U
 # 7.锥化来零陷展宽
@@ -197,8 +197,7 @@ def taperize(RflG):
     for g in range(G):
         for m1 in range(M):
             for m2 in range(M):
-                Ufl[m1, m2, g] = 1 + 2 * \
-                    np.cos(2 * pi * F[g] * d * delta * (m1 - m2) / c)
+                Ufl[m1, m2, g] = 1 + 2 * np.cos(2 * pi * F[g] * d * delta * (m1 - m2) / c)
 
     return Ufl*RflG
 # 11.对导向矢量求优化问题修正
@@ -232,6 +231,7 @@ def datasetgenerate(new_DOA):
     for mm in [1, 2]:  # range(len(new_DOA)): # 对于每个角度组合
         thetacom = new_DOA[mm, :]  # 每一个角度组合
         x = generate_signal(thetacom, sensor_error)  # 1.生成信号
+        io.savemat('data.mat', {'data': x})
         X = calculate_fft(x)  # 2.傅里叶变换
         Rfl = xiefangcha(X, mm, kn)  # 3.计算子带协方差矩阵Rfl
 
