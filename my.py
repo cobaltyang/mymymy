@@ -70,21 +70,18 @@ def generate_DOA_combinations():
                 DOA_train[:,:,k] = auv
                 k += 1
    
-    i = 1
-    new = 1
+    i = 0
     new_DOA = []
-
-    for k in range(len(theta1) * len(theta2) * len(theta3)):
-        theta = DOA_train[k // (len(theta2) * len(theta3)), (k // len(theta3)) % len(theta2), k % len(theta3)]
+    for uu in range(len(theta1) * len(theta2) * len(theta3)):
+        theta = DOA_train[:,:,uu]
         if abs(theta[0] - theta[1]) <= 15 or abs(theta[0] - theta[2]) <= 15:
-            print(f"theta(1)={theta[0]}, theta(2)={theta[1]}, theta(3)={theta[2]}, new = {new}")
-            new += 1
             continue
-    else:
-        new_DOA.append(theta)
-        i += 1
+        else:
+            new_DOA.append(theta)
+            i += 1
 
     new_DOA = np.array(new_DOA)
+    new_DOA = np.transpose(new_DOA, axes=(1, 2, 0)) 
     return new_DOA
 
 
