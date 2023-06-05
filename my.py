@@ -69,7 +69,6 @@ def generate_DOA_combinations():
                 auv = auv[:,np.newaxis]
                 DOA_train[:,:,k] = auv
                 k += 1
-   
     i = 0
     new_DOA = []
     for uu in range(len(theta1) * len(theta2) * len(theta3)):
@@ -79,7 +78,6 @@ def generate_DOA_combinations():
         else:
             new_DOA.append(theta)
             i += 1
-
     new_DOA = np.array(new_DOA)
     new_DOA = np.transpose(new_DOA, axes=(1, 2, 0)) 
     return new_DOA
@@ -94,12 +92,12 @@ def LFM_source(theta, snr):  #两个宽带信号频率是一样的
     t = np.arange(0, T, 1/fs)       # 时间变量
     P = 10**(snr/20)                # 信号功率
     K = B / T                       # 调频速率
-    m_range = np.arange(M)
-    theta_rad = theta*radians
-    delay_term = (m_range[:, np.newaxis] - 1) * d * np.sin(theta_rad) / c
-    t_delay = t - delay_term
-    freq_term = 2 * pi * fl * t_delay + pi * K * t_delay**2
-    x = P * np.exp(1j * freq_term)
+    x = np.zeros((M,len(t)))
+    for vv in range(M):
+        theta_rad = theta*radians
+        yanqian = 2*pi*fl*(t-(vv)*d*np.sin(theta_rad)/c)
+        yanhou = pi*K*(t-(vv)*d*np.sin(theta_rad)/c)**2
+        x[vv,:] = P*np.exp(1j*(yanqian+yanhou))
     return x
 
 
@@ -246,8 +244,8 @@ def solve_optimization_problem(a_except, Rin):
 
 
 def datasetgenerate(new_DOA):
-    for mm in [1, 2]:  # range(len(new_DOA)): # 对于每个角度组合
-        thetacom = new_DOA[mm, :]  # 每一个角度组合
+    for mm in [0, 1]:  # range(len(new_DOA)): # 对于每个角度组合
+        thetacom = new_DOA[:,:,mm]  # 每一个角度组合
         x = generate_signal(thetacom, sensor_error)  # 1.生成信号
         X = calculate_fft(x)  # 2.傅里叶变换
         Rfl = xiefangcha(X, mm, kn)  # 3.计算子带协方差矩阵Rfl
