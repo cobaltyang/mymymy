@@ -3,8 +3,8 @@ from scipy.linalg import eigh, svd
 from scipy.fft import fft
 import cvxpy as cp
 import pdb
-import tensorflow as tf
-from tensorflow.python.framework.ops import disable_eager_execution
+# import tensorflow as tf
+# from tensorflow.python.framework.ops import disable_eager_execution
 import math
 from numpy.random import rand
 import pprint
@@ -22,7 +22,7 @@ def tpuconnect():
 
 f0 = 8e9  # 信号中心频率8GHz
 fr = 8e9  # 干扰信号频率8GHz
-B = 500e6  # 信号带宽500MHz
+B = 5e8  # 信号带宽500MHz
 fl = f0 - B / 2  # 信号起始频率
 fh = f0 + B / 2  # 信号最高频率
 fs = 3 * f0  # 采样频率
@@ -60,9 +60,30 @@ def calculate_frequency_parameters():
 
 
 def generate_DOA_combinations():
-    DOA_train = np.array(np.meshgrid(theta1, theta2, theta3,)).T.reshape(-1, 3)
-    new_DOA = [theta for theta in DOA_train if abs(
-        theta[0] - theta[1]) > 15 and abs(theta[0] - theta[2]) > 15]
+    k = 0
+    DOA_train = np.zeros((3,1,len(theta1)*len(theta1)*len(theta1)))
+    for i1 in range(len(theta1)):
+        for i2 in range(len(theta2)):
+            for i3 in range(len(theta3)):
+                auv = np.array([theta1[i1], theta2[i2], theta3[i3]])
+                auv = auv[:,np.newaxis]
+                DOA_train[:,:,k] = auv
+                k += 1
+   
+    i = 1
+    new = 1
+    new_DOA = []
+
+    for k in range(len(theta1) * len(theta2) * len(theta3)):
+        theta = DOA_train[k // (len(theta2) * len(theta3)), (k // len(theta3)) % len(theta2), k % len(theta3)]
+        if abs(theta[0] - theta[1]) <= 15 or abs(theta[0] - theta[2]) <= 15:
+            print(f"theta(1)={theta[0]}, theta(2)={theta[1]}, theta(3)={theta[2]}, new = {new}")
+            new += 1
+            continue
+    else:
+        new_DOA.append(theta)
+        i += 1
+
     new_DOA = np.array(new_DOA)
     return new_DOA
 
@@ -85,15 +106,16 @@ def LFM_source(theta, snr):  #两个宽带信号频率是一样的
     return x
 
 
-def arrayline(thetacom, fpin,sensor_error=0):
+def arrayline(thetacom, fpin,sensor_error=0):  
     return np.exp(-1j * 2 * pi * (d + sensor_error) * fpin * np.sin(thetacom * radians) * np.arange(M) / c)
 
 
 def zhaidai(sensor_error, thetacom):
     t = np.arange(Nr) / fs  # 窄带干扰专用
-    s = np.sqrt(10 ** (snr[2] / 10)) * np.sin(2 * pi * f0 * t).reshape(1, -1)
+    s = np.sqrt(10 ** (snr[2] / 10)) * np.sin(2 * pi * f0 * t)
+    s = s[np.newaxis,:]
     a = arrayline(thetacom, f0,sensor_error).conj()
-    a = np.reshape(a,(-1,1))
+    a = a[:, np.newaxis]
 
     signal = a @ s  # a*s
     return signal
@@ -102,7 +124,6 @@ def zhaidai(sensor_error, thetacom):
 def generate_signal(thetacom, sensor_error):
     x = LFM_source(thetacom[0], snr[0])  # 期望信号
     x += LFM_source(thetacom[1], snr[1])  # 宽带干扰
-    print(x.dtype)
     u = zhaidai(sensor_error, thetacom[2])
     x += u# 窄带干扰
     noise = 1 / np.sqrt(2) * np.random.randn(M, Nr) + 1j / \
@@ -135,7 +156,7 @@ def xiefangcha(X, mm, kn):
 
 
 def calculate_exponential(f, m, theta):
-    return np.exp(-1j * 2 * pi * d * f * m * np.sin(theta*radians) / c)
+    return np.exp(-1j * 2 * pi * d * f * m * np.sin(theta*radians) / c)  #这里只返回一个数
 
 
 def calculate_Y():
@@ -158,6 +179,7 @@ def calculate_Y():
                     F[g], m, theta[theta_index]).T
 
         U, _, V = np.linalg.svd(Af.dot(Af0.conj().T))
+        V = V.T
         Y[:, :, g] = V.dot(U.conj().T)
 
     return Y
@@ -168,7 +190,7 @@ def JuDie(Y, Ju):
     Rin = np.zeros((M, M), dtype=complex)
     for g in range(G):
         Rin += Y[:, :, g] @ Ju[:, :, g] @ Y[:, :, g].conj().T
-    Rin /= G
+    Rin = Rin/G
     return Rin
 # 6.重构子带协方差矩阵R
 
@@ -205,14 +227,13 @@ def taperize(RflG):
 
 def solve_optimization_problem(a_except, Rin):
 
-    a_except = a_except.reshape(-1, 1)
     e = cp.Variable((M, 1), complex=True)  # Define the optimization variables
 
     # Define the objective function and constraints
     obj = cp.Minimize(cp.quad_form((a_except + e), np.linalg.inv(Rin)))
     constr = [cp.quad_form((a_except + e), Rin) <= cp.quad_form(a_except, Rin),
               cp.norm(a_except + e) <= np.sqrt(M),
-              a_except.T @ e == 0]
+              a_except.conj().T @ e == 0]
 
     prob = cp.Problem(obj, constr)  # Solve the optimization problem
     prob.solve()
@@ -231,7 +252,6 @@ def datasetgenerate(new_DOA):
     for mm in [1, 2]:  # range(len(new_DOA)): # 对于每个角度组合
         thetacom = new_DOA[mm, :]  # 每一个角度组合
         x = generate_signal(thetacom, sensor_error)  # 1.生成信号
-        io.savemat('data.mat', {'data': x})
         X = calculate_fft(x)  # 2.傅里叶变换
         Rfl = xiefangcha(X, mm, kn)  # 3.计算子带协方差矩阵Rfl
 
@@ -243,26 +263,9 @@ def datasetgenerate(new_DOA):
         RflK = taperize(RflG)  # 7.乘以锥化矩阵进行零陷展宽
 
         Rin = JuDie(Y, RflK)  # 9.把Rinfl_U聚焦&叠加
-        # 使用 np.allclose 比较矩阵 A 和其共轭转置 A.conj().T 是否相等
-        # is_hermitian = np.allclose(Rin, Rin.conj().T)
-
-
-        # if is_hermitian:
-        #     print("A is a Hermitian matrix")
-        # else:
-        #     print("A is not a Hermitian matrix")
-        # is_sys = np.allclose(Rin, Rin.T)
-
-
-        # if is_sys:
-        #     print("A is a sys matrix")
-        # else:
-        #     print("A is not a sys matrix")
-
-        # print("nihao")
     # 二、导向矢量修正
-        a_except = np.exp(-1j * pi * np.arange(M) *
-                      np.sin(thetacom[0]*radians)).conj().T  # 10.求原始导向矢量
+        a_except = arrayline(thetacom[0], f0)
+        a_except = a_except[:, np.newaxis]
         a_except = solve_optimization_problem(a_except, Rin)  # 11.对导向矢量求优化问题修正
 
         Wcsm = np.linalg.inv(Rin) @ a_except / (a_except.T @
