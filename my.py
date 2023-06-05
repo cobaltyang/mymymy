@@ -92,7 +92,7 @@ def LFM_source(theta, snr):  #两个宽带信号频率是一样的
     t = np.arange(0, T, 1/fs)       # 时间变量
     P = 10**(snr/20)                # 信号功率
     K = B / T                       # 调频速率
-    x = np.zeros((M,len(t)))
+    x = np.zeros((M,len(t)),dtype=complex)
     for vv in range(M):
         theta_rad = theta*radians
         yanqian = 2*pi*fl*(t-(vv)*d*np.sin(theta_rad)/c)
@@ -102,7 +102,7 @@ def LFM_source(theta, snr):  #两个宽带信号频率是一样的
 
 
 def arrayline(thetacom, fpin,sensor_error=0):  
-    return np.exp(-1j * 2 * pi * (d + sensor_error) * fpin * np.sin(thetacom * radians) * np.arange(M) / c)
+    return np.exp(-1j * 2 * pi * (d + sensor_error) * fpin * np.sin(thetacom * radians) * np.arange(M) / c)  #出来的只有一个维度
 
 
 def zhaidai(sensor_error, thetacom):
