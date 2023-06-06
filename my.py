@@ -1,8 +1,11 @@
 import numpy as np
 from scipy.linalg import eigh, svd
 from scipy.fft import fft
+from scipy.io import loadmat
 import cvxpy as cp
 import pdb
+import matplotlib.pyplot as plt
+from scipy.signal import chirp
 # import tensorflow as tf
 # from tensorflow.python.framework.ops import disable_eager_execution
 import math
@@ -44,6 +47,9 @@ theta2 = np.arange(-60, -29, 1)  # 宽带干扰区域
 theta3 = np.arange(30, 61, 1)  # 窄带干扰区域
 snr = np.array([10, 30, 30])  # 信噪比
 sensor_error = 0.1 * (rand() - 0.5)  # 阵元位置误差
+seed = 1234
+np.random.seed(seed)
+
 
 
 def calculate_frequency_parameters():
@@ -100,6 +106,17 @@ def LFM_source(theta, snr):  #两个宽带信号频率是一样的
         x[vv,:] = P*np.exp(1j*(yanqian+yanhou))
     return x
 
+def LFM_source_chirp(theta, snr):  #两个宽带信号频率是一样的
+    t = np.arange(0, T, 1/fs)       # 时间变量
+    P = 10**(snr/20)                # 信号功率
+    K = B / T                       # 调频速率
+    x = np.zeros((M,len(t)),dtype=complex)
+    for m in range(M):
+        tau = m * d * np.sin(theta*radians) / c
+        phase = 2 * np.pi * fl * t + pi * B / T * t**2
+        x[m, :] = P * chirp(t - tau, fl, T, fl + B, method='linear', phi=0) + 1j * P * chirp(t - tau, fl, T, fl + B, method='linear', phi=-90)
+    return x
+
 
 def arrayline(thetacom, fpin,sensor_error=0):  
     return np.exp(-1j * 2 * pi * (d + sensor_error) * fpin * np.sin(thetacom * radians) * np.arange(M) / c)  #出来的只有一个维度
@@ -118,16 +135,28 @@ def zhaidai(sensor_error, thetacom):
 
 def generate_signal(thetacom, sensor_error):
     x = LFM_source(thetacom[0], snr[0])  # 期望信号
+    x_test = LFM_source_chirp(thetacom[0], snr[0])
     x += LFM_source(thetacom[1], snr[1])  # 宽带干扰
     u = zhaidai(sensor_error, thetacom[2])
     x += u# 窄带干扰
-    noise = 1 / np.sqrt(2) * np.random.randn(M, Nr) + 1j / \
-        np.sqrt(2) * np.random.randn(M, Nr)  # 加噪声
+    # noise = 1 / np.sqrt(2) * np.random.randn(M, Nr) + 1j / \
+    #     np.sqrt(2) * np.random.randn(M, Nr)  # 加噪声
+    noise_data = loadmat('noise.mat')
+    noise = noise_data['noise']
     x += noise
     return x
+
+
+def plot_signal(signal):
+    plt.imshow(signal, aspect='auto', cmap='jet')
+    plt.colorbar()
+    plt.xlabel('Time')
+    plt.ylabel('Element')
+    plt.title('Signal')
+    plt.show()
+
+
 # 2.计算fft
-
-
 def calculate_fft(x):
     K_freq = Nr//J
 
@@ -247,6 +276,7 @@ def datasetgenerate(new_DOA):
     for mm in [0, 1]:  # range(len(new_DOA)): # 对于每个角度组合
         thetacom = new_DOA[:,:,mm]  # 每一个角度组合
         x = generate_signal(thetacom, sensor_error)  # 1.生成信号
+        plot_signal(x)
         X = calculate_fft(x)  # 2.傅里叶变换
         Rfl = xiefangcha(X, mm, kn)  # 3.计算子带协方差矩阵Rfl
 
