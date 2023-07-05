@@ -13,6 +13,7 @@ from numpy.random import rand
 import pprint
 from scipy import io
 
+
 def tpuconnect():
     resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu='')
     tf.config.experimental_connect_to_cluster(resolver)
@@ -51,14 +52,13 @@ seed = 1234
 np.random.seed(seed)
 
 
-
 def calculate_frequency_parameters():
 
     t = np.arange(0, Nr) / fs  # 时间轴刻度
     fw = np.linspace(0, fs, Nr)  # 频率轴刻度
     m = int(f0 / fs)
-    kn = np.nonzero(np.logical_and((fw >= f0 - m * fs - B / 2) , (fw <= f0 - m * fs + B / 2))
-                 )[0] # fft后落在带宽内频率索引
+    kn = np.nonzero(np.logical_and((fw >= f0 - m * fs - B / 2), (fw <= f0 - m * fs + B / 2))
+                    )[0]  # fft后落在带宽内频率索引
     G = len(kn)  # 落在带宽内的频率的个数
     F = fw[kn]  # 落在带宽内的频率
 
@@ -67,25 +67,25 @@ def calculate_frequency_parameters():
 
 def generate_DOA_combinations():
     k = 0
-    DOA_train = np.zeros((3,1,len(theta1)*len(theta1)*len(theta1)))
+    DOA_train = np.zeros((3, 1, len(theta1)*len(theta1)*len(theta1)))
     for i1 in range(len(theta1)):
         for i2 in range(len(theta2)):
             for i3 in range(len(theta3)):
                 auv = np.array([theta1[i1], theta2[i2], theta3[i3]])
-                auv = auv[:,np.newaxis]
-                DOA_train[:,:,k] = auv
+                auv = auv[:, np.newaxis]
+                DOA_train[:, :, k] = auv
                 k += 1
     i = 0
     new_DOA = []
     for uu in range(len(theta1) * len(theta2) * len(theta3)):
-        theta = DOA_train[:,:,uu]
+        theta = DOA_train[:, :, uu]
         if abs(theta[0] - theta[1]) <= 15 or abs(theta[0] - theta[2]) <= 15:
             continue
         else:
             new_DOA.append(theta)
             i += 1
     new_DOA = np.array(new_DOA)
-    new_DOA = np.transpose(new_DOA, axes=(1, 2, 0)) 
+    new_DOA = np.transpose(new_DOA, axes=(1, 2, 0))
     return new_DOA
 
 
@@ -94,39 +94,42 @@ new_DOA = generate_DOA_combinations()
 # 1.产生信号
 
 
-def LFM_source(theta, snr):  #两个宽带信号频率是一样的
+def LFM_source(theta, snr):  # 两个宽带信号频率是一样的
     t = np.arange(0, T, 1/fs)       # 时间变量
     P = 10**(snr/20)                # 信号功率
     K = B / T                       # 调频速率
-    x = np.zeros((M,len(t)),dtype=complex)
+    x = np.zeros((M, len(t)), dtype=complex)
     for vv in range(M):
         theta_rad = theta*radians
         yanqian = 2*pi*fl*(t-(vv)*d*np.sin(theta_rad)/c)
         yanhou = pi*K*(t-(vv)*d*np.sin(theta_rad)/c)**2
-        x[vv,:] = P*np.exp(1j*(yanqian+yanhou))
+        x[vv, :] = P*np.exp(1j*(yanqian+yanhou))
     return x
 
-def LFM_source_chirp(theta, snr):  #两个宽带信号频率是一样的
+
+def LFM_source_chirp(theta, snr):  # 两个宽带信号频率是一样的
     t = np.arange(0, T, 1/fs)       # 时间变量
     P = 10**(snr/20)                # 信号功率
     K = B / T                       # 调频速率
-    x = np.zeros((M,len(t)),dtype=complex)
+    x = np.zeros((M, len(t)), dtype=complex)
     for m in range(M):
         tau = m * d * np.sin(theta*radians) / c
         phase = 2 * np.pi * fl * t + pi * B / T * t**2
-        x[m, :] = P * chirp(t - tau, fl, T, fl + B, method='linear', phi=0) + 1j * P * chirp(t - tau, fl, T, fl + B, method='linear', phi=-90)
+        x[m, :] = P * chirp(t - tau, fl, T, fl + B, method='linear', phi=0) + \
+            1j * P * chirp(t - tau, fl, T, fl + B, method='linear', phi=-90)
     return x
 
 
-def arrayline(thetacom, fpin,sensor_error=0):  
-    return np.exp(-1j * 2 * pi * (d + sensor_error) * fpin * np.sin(thetacom * radians) * np.arange(M) / c)  #出来的只有一个维度
+def arrayline(thetacom, fpin, sensor_error=0):
+    # 出来的只有一个维度
+    return np.exp(-1j * 2 * pi * (d + sensor_error) * fpin * np.sin(thetacom * radians) * np.arange(M) / c)
 
 
 def zhaidai(sensor_error, thetacom):
     t = np.arange(Nr) / fs  # 窄带干扰专用
     s = np.sqrt(10 ** (snr[2] / 10)) * np.sin(2 * pi * f0 * t)
-    s = s[np.newaxis,:]
-    a = arrayline(thetacom, f0,sensor_error).conj()
+    s = s[np.newaxis, :]
+    a = arrayline(thetacom, f0, sensor_error).conj()
     a = a[:, np.newaxis]
 
     signal = a @ s  # a*s
@@ -138,7 +141,7 @@ def generate_signal(thetacom, sensor_error):
     x_test = LFM_source_chirp(thetacom[0], snr[0])
     x += LFM_source(thetacom[1], snr[1])  # 宽带干扰
     u = zhaidai(sensor_error, thetacom[2])
-    x += u# 窄带干扰
+    x += u  # 窄带干扰
     # noise = 1 / np.sqrt(2) * np.random.randn(M, Nr) + 1j / \
     #     np.sqrt(2) * np.random.randn(M, Nr)  # 加噪声
     noise_data = loadmat('noise.mat')
@@ -166,6 +169,14 @@ def calculate_fft(x):
             X[m, k, :] = np.fft.fft(x[m, (k*J):((k+1)*J)], J)  # 1200点，所以是1200
 
     return X
+
+
+def calculate_fft2(x):
+    X = np.zeros((M, Nr), dtype=complex)
+    for m in range(M):
+        X[m, :] = np.fft.fft(x[m, :])  # 1200
+
+    return X
 # 3.估计子带协方差矩阵
 
 
@@ -173,14 +184,16 @@ def xiefangcha(X, mm, kn):
     K_freq = Nr//J
     Rfl = np.zeros((M, M, G), dtype=complex)
     for g in range(G):
-        Rfl[:,:, g] = X[:,kn[g]%K_freq,kn[g]//K_freq] @ X[:,kn[g]%K_freq,kn[g]//K_freq].conj().T
+        Rfl[:, :, g] = X[:, kn[g] % K_freq, kn[g]//K_freq] @ X[:, kn[g] %
+                                                               K_freq, kn[g]//K_freq].conj().T
 
     return Rfl
 # 4.计算聚焦矩阵
 
 
 def calculate_exponential(f, m, theta):
-    return np.exp(-1j * 2 * pi * d * f * m * np.sin(theta*radians) / c)  #这里只返回一个数
+    # 这里只返回一个数
+    return np.exp(-1j * 2 * pi * d * f * m * np.sin(theta*radians) / c)
 
 
 def calculate_Y():
@@ -230,7 +243,8 @@ def ChongGou(thetacom, R_):
     Rinfl_U = np.zeros((M, M, G), dtype=complex)
 
     for g in range(G):
-        Rinfl_U[:, :, g] = lambda_max * (arrayline(doa_i[0],F[g])*arrayline(doa_i[0],F[g]).conj().T) + lambda_max * (arrayline(doa_i[1],F[g])*arrayline(doa_i[1],F[g]).conj().T)+lambda_min * np.eye(M)
+        Rinfl_U[:, :, g] = lambda_max * (arrayline(doa_i[0], F[g])*arrayline(doa_i[0], F[g]).conj().T) + lambda_max * (
+            arrayline(doa_i[1], F[g])*arrayline(doa_i[1], F[g]).conj().T)+lambda_min * np.eye(M)
 
     return Rinfl_U
 # 7.锥化来零陷展宽
@@ -243,7 +257,8 @@ def taperize(RflG):
     for g in range(G):
         for m1 in range(M):
             for m2 in range(M):
-                Ufl[m1, m2, g] = 1 + 2 * np.cos(2 * pi * F[g] * d * delta * (m1 - m2) / c)
+                Ufl[m1, m2, g] = 1 + 2 * \
+                    np.cos(2 * pi * F[g] * d * delta * (m1 - m2) / c)
 
     return Ufl*RflG
 # 11.对导向矢量求优化问题修正
@@ -274,7 +289,7 @@ def solve_optimization_problem(a_except, Rin):
 
 def datasetgenerate(new_DOA):
     for mm in [0, 1]:  # range(len(new_DOA)): # 对于每个角度组合
-        thetacom = new_DOA[:,:,mm]  # 每一个角度组合
+        thetacom = new_DOA[:, :, mm]  # 每一个角度组合
         x = generate_signal(thetacom, sensor_error)  # 1.生成信号
         plot_signal(x)
         X = calculate_fft(x)  # 2.傅里叶变换
@@ -294,7 +309,7 @@ def datasetgenerate(new_DOA):
         a_except = solve_optimization_problem(a_except, Rin)  # 11.对导向矢量求优化问题修正
 
         Wcsm = np.linalg.inv(Rin) @ a_except / (a_except.T @
-                                            np.linalg.inv(Rin) @ a_except)  # 三、求权重
+                                                np.linalg.inv(Rin) @ a_except)  # 三、求权重
         w_out[:, mm] = Wcsm
         return Rin, w_out
 
@@ -373,6 +388,7 @@ def process_data(new_DOA, R_in, w_out):
 
 def main():
     Rin, w_out = datasetgenerate(new_DOA)
+
 
     # R_train_real,R_train_imag,w_train_real,w_train_imag,R_test_real,R_test_imag,w_test_real,w_test_imag = process_data(new_DOA, R_in, w_out)
 # strategy = tpuconnect()

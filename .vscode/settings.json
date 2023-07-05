@@ -1,3 +1,7 @@
 {
-    "CS.CodeAssistant.EnableExtension": false
+    "CS.CodeAssistant.EnableExtension": false,
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.python"
+    },
+    "python.formatting.provider": "none"
 }
